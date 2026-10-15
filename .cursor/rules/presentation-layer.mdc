@@ -1,0 +1,193 @@
+---
+description: Presentation layer — Intents, Actions, Commands, Cubits, Views
+globs: packages/*/lib/presentation/**/*.dart
+alwaysApply: false
+---
+
+Presentation is Flutter-only. Views observe ViewModels via `BlocBuilder`; ViewModels never import widgets.
+
+Flow: `View → Intent → Action → Command → Cubit → UseCase`
+
+## Command pattern
+
+**Presentation commands** (`presentation/commands/`) are the Cubit input, dispatched by **Actions**:
+
+- One sealed command hierarchy per screen/flow (e.g. `ItemListCommand`).
+- Variants carry parameters (e.g. `FilterItemList(ItemCategory category)`).
+- Actions map Intent → Command → `Cubit.execute()`.
+- Cubits expose a single entry point: `execute(<Feature>Command command)`.
+- Views never call `execute()` from widget callbacks — use Intents. **Exception:** initial load in `BlocProvider.create` may call `execute` once.
+
+```dart
+// presentation/commands/item_list_command.dart
+sealed class ItemListCommand {
+  const ItemListCommand();
+}
+
+final class LoadItemListCommand extends ItemListCommand {
+  const LoadItemListCommand();
+}
+
+final class FilterItemListCommand extends ItemListCommand {
+  const FilterItemListCommand(this.category);
+  final ItemCategory category;
+}
+
+final class RefreshItemListCommand extends ItemListCommand {
+  const RefreshItemListCommand();
+}
+```
+
+## Actions, Intents & Shortcuts
+
+Route user interactions through Flutter’s **Intent → Action** system so keyboard shortcuts can be added without changing Views or ViewModels.
+
+| Flutter class | Location | Role |
+|---------------|----------|------|
+| **Intent** | `presentation/intents/` | Describes a user action. Subclass `Intent`. Key-bindable. |
+| **Action** | `presentation/actions/` | Handles an Intent. Subclass `ContextAction<T>`. Maps Intent → Command → `Cubit.execute()`. |
+| **Shortcuts** | Screen or app shell | Maps `LogicalKeySet` → Intent. |
+
+Rules:
+
+- Views call `Actions.invoke(context, const MyIntent())` — never `cubit.execute()` from widget callbacks.
+- One Intent per user action; mirror Command parameters on the Intent when needed.
+- Actions read the Cubit from context and dispatch the matching Command.
+- Override `invoke(T intent, [BuildContext? context])` — `ContextAction` receives the context as an optional parameter and has no `context` field.
+- The context is null when no invocation context is available; for shortcut-triggered actions fall back to `primaryFocus?.context`.
+- Nest **`Shortcuts` as the ancestor of `Actions`** (Shortcuts above Actions in the tree).
+
+```dart
+// presentation/intents/item_list_intent.dart
+final class LoadItemListIntent extends Intent {
+  const LoadItemListIntent();
+}
+
+final class FilterItemListIntent extends Intent {
+  const FilterItemListIntent(this.category);
+  final ItemCategory category;
+}
+
+final class RefreshItemListIntent extends Intent {
+  const RefreshItemListIntent();
+}
+
+// presentation/actions/item_list_action.dart
+final class LoadItemListAction extends ContextAction<LoadItemListIntent> {
+  @override
+  void invoke(LoadItemListIntent intent, [BuildContext? context]) {
+    context?.read<ItemListCubit>().execute(const LoadItemListCommand());
+  }
+}
+
+final class FilterItemListAction extends ContextAction<FilterItemListIntent> {
+  @override
+  void invoke(FilterItemListIntent intent, [BuildContext? context]) {
+    context?.read<ItemListCubit>().execute(
+      FilterItemListCommand(intent.category),
+    );
+  }
+}
+
+final class RefreshItemListAction extends ContextAction<RefreshItemListIntent> {
+  @override
+  void invoke(RefreshItemListIntent intent, [BuildContext? context]) {
+    // Shortcut invocations can arrive without a context.
+    final targetContext = context ?? primaryFocus?.context;
+    if (targetContext == null) {
+      return;
+    }
+    targetContext.read<ItemListCubit>().execute(const RefreshItemListCommand());
+  }
+}
+```
+
+## Cubit for ViewModels (MVVM)
+
+- Name cubits `*Cubit` (not `*ViewModel` or `*Bloc`).
+- One Cubit per screen or cohesive UI concern.
+- State is a sealed class — prefer shared `LoadState<T>` from `package:core` when it fits.
+- Inject use cases via constructor; resolve with `getIt` at the composition root.
+- Views are passive: Intents + emitted state only.
+
+## Canonical vertical slice (template)
+
+Prefer extending this pattern over inventing parallel styles. In each app’s `AGENTS.md`, replace `Item` / `catalog` with domain types.
+
+```dart
+// presentation/view_models/item_list_cubit.dart
+class ItemListCubit extends Cubit<LoadState<List<Item>>> {
+  ItemListCubit(this._loadItemList) : super(const LoadInitial());
+
+  final LoadItemList _loadItemList;
+
+  Future<void> execute(ItemListCommand command) async => switch (command) {
+        LoadItemListCommand() || RefreshItemListCommand() => _load(),
+        FilterItemListCommand(:final category) => _load(category: category),
+      };
+
+  Future<void> _load({ItemCategory? category}) async {
+    emit(const LoadLoading());
+    final result = await _loadItemList(category: category);
+    emit(switch (result) {
+      Right(:final value) => LoadSuccess(value),
+      Left(:final value) => LoadFailure(value),
+    });
+  }
+}
+
+// presentation/views/item_list_screen.dart
+class ItemListScreen extends StatelessWidget {
+  const ItemListScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Shortcuts(
+      shortcuts: {
+        LogicalKeySet(LogicalKeyboardKey.keyR):
+            const RefreshItemListIntent(),
+      },
+      child: Actions(
+        actions: {
+          LoadItemListIntent: LoadItemListAction(),
+          FilterItemListIntent: FilterItemListAction(),
+          RefreshItemListIntent: RefreshItemListAction(),
+        },
+        child: BlocProvider(
+          create: (_) => ItemListCubit(getIt<LoadItemList>())
+            ..execute(const LoadItemListCommand()),
+          child: BlocBuilder<ItemListCubit, LoadState<List<Item>>>(
+            builder: (context, state) => switch (state) {
+              LoadSuccess() => FilledButton(
+                  onPressed: () => Actions.invoke(
+                    context,
+                    const RefreshItemListIntent(),
+                  ),
+                  child: const Text('Refresh'),
+                ),
+              LoadFailure(:final failure) => Text(failure.message),
+              LoadLoading() => const CircularProgressIndicator(),
+              LoadInitial() => const SizedBox.shrink(),
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ❌ BAD — widget calls Cubit directly (not key-bindable)
+onPressed: () =>
+    context.read<ItemListCubit>().execute(const LoadItemListCommand()),
+
+// ✅ GOOD — widget invokes an Intent
+onPressed: () => Actions.invoke(context, const RefreshItemListIntent()),
+
+// ❌ BAD — Cubit constructs domain strategies / talks to repositories
+FilterItemListCommand(:final category) => _load(
+  filter: CategoryItemFilter(category),
+),
+
+// ✅ GOOD — Cubit passes data; use case owns strategy selection
+FilterItemListCommand(:final category) => _load(category: category),
+```

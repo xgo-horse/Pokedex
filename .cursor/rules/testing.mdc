@@ -1,0 +1,14 @@
+---
+description: Testing — placement, naming, and Cubit tests
+globs: **/*_test.dart
+alwaysApply: false
+---
+
+## Testing
+
+- Place tests next to the code they cover: `test/` at package root.
+- Name test files `<source_file>_test.dart`.
+- Prefer unit tests for domain/data; widget tests for UI.
+- Test Cubits with `bloc_test`; dispatch **Commands** through `execute()`.
+- Register test doubles in GetIt or pass mocks to Cubits; `getIt.reset()` after each test when using the locator.
+- Add or update tests when changing behavior, not just when asked.

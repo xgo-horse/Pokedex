@@ -1,0 +1,37 @@
+---
+description: Data layer — data sources, repository implementations, failure mapping
+globs: packages/*/lib/data/**/*.dart
+alwaysApply: false
+---
+
+The data layer implements the domain repository interfaces. It owns data sources, API clients, JSON parsing, and caching. Map errors to `Failure` and return `Left`; return `Right` on success — do not throw for expected errors.
+
+- Put remote/cache I/O behind a **data source** collaborator in `data/sources/`; a repository composes data sources rather than performing I/O itself.
+- Data sources are repository collaborators, **not** domain strategies — never place them in `domain/strategies/`.
+- Keep DTOs and JSON parsing in `data/`; the domain layer must never see transport types.
+
+```dart
+// data/sources/item_data_source.dart
+abstract interface class ItemDataSource {
+  Future<Either<Failure, List<Item>>> fetchItems();
+}
+
+// data/sources/remote_item_data_source.dart
+final class RemoteItemDataSource implements ItemDataSource {
+  const RemoteItemDataSource(this._api);
+  final CatalogApiClient _api;
+
+  @override
+  Future<Either<Failure, List<Item>>> fetchItems() async { /* ... */ }
+}
+
+// data/repositories/item_repository_impl.dart
+class ItemRepositoryImpl implements ItemRepository {
+  const ItemRepositoryImpl(this._dataSource);
+  final ItemDataSource _dataSource;
+
+  @override
+  Future<Either<Failure, List<Item>>> getItemList() =>
+      _dataSource.fetchItems();
+}
+```

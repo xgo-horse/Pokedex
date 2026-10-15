@@ -1,0 +1,73 @@
+---
+description: Domain layer — use cases and strategy pattern
+globs: packages/*/lib/domain/**/*.dart
+alwaysApply: false
+---
+
+The domain layer is pure Dart with no Flutter imports. It holds entities, repository interfaces, use cases, and strategies. Repositories and use cases return `Either<Failure, T>`.
+
+## Use cases
+
+Place **use cases** in `domain/use_cases/`. They are the ViewModel’s single application entry point for a cohesive flow (list, detail, search).
+
+- One use case per cohesive flow (e.g. `LoadItemList`, `GetItemDetail`).
+- Coordinate repositories and domain strategies — ViewModels must not orchestrate multiple domain dependencies.
+- Return `Either<Failure, T>`; do not emit UI state or import Flutter.
+- Keep them thin: delegate to repositories/strategies; do not duplicate rules that belong on entities.
+- Prefer typed method parameters. Introduce a sealed **domain command** only when one use case class must handle several distinct operations.
+
+```dart
+// domain/use_cases/load_item_list.dart
+class LoadItemList {
+  const LoadItemList(this._repository);
+
+  final ItemRepository _repository;
+
+  Future<Either<Failure, List<Item>>> call({
+    ItemCategory? category,
+  }) async {
+    final result = await _repository.getItemList();
+    return switch (result) {
+      Left(:final value) => Left(value),
+      Right(:final value) => Right(
+          (category == null
+                  ? const AllItemFilter()
+                  : CategoryItemFilter(category))
+              .apply(value),
+        ),
+    };
+  }
+}
+```
+
+## Strategy pattern
+
+Use **Strategy** for interchangeable **pure** algorithms. Define contracts in `domain/strategies/`; keep I/O out of strategies.
+
+- Prefer a **sealed class** or `abstract interface class`.
+- Select strategies via constructor injection or inside the use case — not via `if/else` type chains in Views.
+- Name by behavior (`CategoryItemFilter`, `AllItemFilter`).
+- **Data sources** (remote, cache) live in `data/sources/` and are repository collaborators, not domain strategies.
+
+```dart
+// domain/strategies/item_filter_strategy.dart
+sealed class ItemFilterStrategy {
+  const ItemFilterStrategy();
+  List<Item> apply(List<Item> items);
+}
+
+final class AllItemFilter extends ItemFilterStrategy {
+  const AllItemFilter();
+  @override
+  List<Item> apply(List<Item> items) => items;
+}
+
+final class CategoryItemFilter extends ItemFilterStrategy {
+  const CategoryItemFilter(this.category);
+  final ItemCategory category;
+
+  @override
+  List<Item> apply(List<Item> items) =>
+      items.where((i) => i.categories.contains(category)).toList();
+}
+```

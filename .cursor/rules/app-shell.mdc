@@ -1,0 +1,62 @@
+---
+description: App shell — GetIt dependency injection and GoRouter routing
+globs: lib/**/*.dart
+alwaysApply: false
+---
+
+The app shell (`lib/`) is the composition root: it wires feature packages together, registers dependencies, and owns routing.
+
+## GetIt for dependency injection
+
+Keep registration in `lib/di/` (e.g. `lib/di/injection.dart`).
+
+- Shared locator: `final getIt = GetIt.instance;`
+- Call `configureDependencies()` from `main()` before `runApp`.
+- Register abstractions against implementations.
+- Prefer `registerLazySingleton` for services, repositories, use cases, and API clients.
+- Construct Cubits in `BlocProvider` and resolve their dependencies via `getIt`.
+- Feature packages define types; the app shell registers them — packages do not call `GetIt` directly.
+- In tests, call `getIt.reset()` in `tearDown` when using the locator.
+
+```dart
+// lib/di/injection.dart
+Future<void> configureDependencies() async {
+  getIt.registerLazySingleton<CatalogApiClient>(CatalogApiClient.new);
+  getIt.registerLazySingleton<ItemDataSource>(
+    () => RemoteItemDataSource(getIt()),
+  );
+  getIt.registerLazySingleton<ItemRepository>(
+    () => ItemRepositoryImpl(getIt()),
+  );
+  getIt.registerLazySingleton<LoadItemList>(
+    () => LoadItemList(getIt()),
+  );
+}
+```
+
+## GoRouter for routing
+
+Keep route config in `lib/router/`.
+
+- Prefer named paths (`/items`, `/items/:id`).
+- Pass path/query parameters via `GoRouterState`.
+- Use `context.go()` / `context.push()` — avoid imperative `Navigator.push` for new code.
+
+```dart
+final router = GoRouter(
+  routes: [
+    GoRoute(
+      path: '/items',
+      builder: (context, state) => const ItemListScreen(),
+      routes: [
+        GoRoute(
+          path: ':id',
+          builder: (context, state) => ItemDetailScreen(
+            id: state.pathParameters['id']!,
+          ),
+        ),
+      ],
+    ),
+  ],
+);
+```

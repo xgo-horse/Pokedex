@@ -1,0 +1,115 @@
+---
+description: Flutter MVVM monorepo — workspace layout, layer boundaries, and working agreements
+alwaysApply: true
+---
+
+<!-- This rule is split by layer across several files. These rules are domain-neutral and double as the reusable template; see docs/templates/README.md to copy them into another project. -->
+
+## Rule map
+
+This rule holds the placement decisions — where a new file goes and which layer may talk to which. The detailed rules below attach automatically when you open a file in that area.
+
+| Area | Rule | Covers |
+|------|------|--------|
+| Any Dart file | `dart-style.mdc` | Effective Dart, sealed classes, pattern matching, `Either` |
+| `packages/*/lib/domain/` | `domain-layer.mdc` | Use cases, strategies |
+| `packages/*/lib/data/` | `data-layer.mdc` | Data sources, repository implementations |
+| `packages/*/lib/presentation/` | `presentation-layer.mdc` | Intents, Actions, Commands, Cubits, Views |
+| `lib/` (app shell) | `app-shell.mdc` | GetIt registration, GoRouter |
+| `*_test.dart` | `testing.mdc` | Test placement, Cubit tests |
+
+## Workspace structure
+
+```
+{{APP_NAME}}/
+├── lib/
+│   ├── di/                    # GetIt — service locator setup
+│   ├── router/                # GoRouter config
+│   └── main.dart              # App entry point
+├── packages/
+│   ├── core/
+│   │   ├── lib/
+│   │   │   ├── core.dart      # Barrel — public API
+│   │   │   └── src/           # Either, Failure, LoadState
+│   │   └── pubspec.yaml
+│   └── catalog/               # One feature package (rename per domain)
+│       ├── lib/
+│       │   ├── catalog.dart   # Barrel — public API
+│       │   ├── domain/
+│       │   │   ├── use_cases/     # Application entry points for ViewModels
+│       │   │   ├── strategies/    # Pure algorithm strategies (filters, etc.)
+│       │   │   └── ...            # Entities, repository interfaces
+│       │   ├── data/
+│       │   │   ├── sources/       # Data sources (remote, cache, …)
+│       │   │   └── ...            # API clients, DTOs, repository impls
+│       │   └── presentation/
+│       │       ├── intents/       # Flutter Intent — user-action descriptors
+│       │       ├── actions/       # Flutter Action — Intent → Command → Cubit
+│       │       ├── commands/      # Sealed commands for Cubit.execute()
+│       │       ├── views/         # Screens and widgets
+│       │       └── view_models/   # Cubits
+│       └── pubspec.yaml
+└── pubspec.yaml               # Root workspace config (workspace: packages/*)
+```
+
+### Workspace rules
+
+- Add new packages under `packages/` and register them in the root `pubspec.yaml` `workspace:` list.
+- Each package needs its own `pubspec.yaml` with `resolution: workspace`.
+- All Dart library code lives under `lib/`. Export public API from a barrel (e.g. `packages/core/lib/core.dart`, `packages/catalog/lib/catalog.dart`).
+- App code imports packages via `package:core/...` and `package:catalog/...`.
+
+### Architecture — MVVM
+
+| MVVM layer | Location | Responsibility |
+|------------|----------|----------------|
+| **Model** | `domain/` + `data/` | Business data and logic. Entities, repository interfaces, use cases, strategies (domain); API, DTOs, data sources, repository implementations (data). |
+| **View** | `presentation/views/` | Flutter UI. Renders state and invokes **Intents** via `Actions.invoke()` — not Cubits directly. No business logic. |
+| **ViewModel** | `presentation/view_models/` | **Cubit** classes that expose UI state and handle **Commands**. Call **use cases** (not repositories); emit sealed state for the View. |
+
+Layer rules:
+
+- **domain** — pure Dart, no Flutter imports. Entities, repository interfaces, **use cases**, **strategies**. Repositories and use cases return `Either<Failure, T>`.
+- **data** — implements domain repositories. Owns **data sources**, API clients, JSON parsing, caching. Map errors to `Failure` and return `Left`; return `Right` on success.
+- **presentation** — Flutter only. Views observe ViewModels via `BlocBuilder`; ViewModels never import widgets.
+
+Default dependency flow:
+
+`View → Intent → Action → Command → ViewModel → UseCase → Repository ← data`
+
+Use **Intents**, **Actions**, and **Shortcuts** so user actions are key-bindable. Use **Commands** as the Cubit entry point. Use **use cases** as the application entry point for ViewModels. Use the **Strategy pattern** for interchangeable pure algorithms (filters, sort). Prefer a **data source** collaborator inside the repository for remote/cache I/O — do not model data sources as domain strategies.
+
+Routing lives in the app shell (`lib/`) using **GoRouter**. Register dependencies in `lib/di/` with **GetIt**.
+
+**DI vs context lookup:**
+
+- Resolve services, repositories, and use cases with `getIt<T>()` — never `context.read` or manual `new` for those.
+- Inside **Actions**, read Cubits with `context.read<*Cubit>()` (provided by `BlocProvider`).
+
+## Boundaries
+
+### Always do
+
+- Run `dart analyze` before considering a task done.
+- Match existing patterns in the file and package you are editing.
+- Keep changes focused — avoid unrelated refactors.
+- Add `pubspec.yaml` dependencies through `dart pub add`, not by hand-editing version constraints.
+
+### Ask first
+
+- Adding new third-party dependencies.
+- Changing workspace or package structure.
+- Modifying platform-specific code (`android/`, `ios/`, `macos/`, etc.) unless the task requires it.
+
+### Never do
+
+- Commit secrets, API keys, or `.env` files.
+- Edit generated files (`*.g.dart`, `GeneratedPluginRegistrant.*`, `.dart_tool/`).
+- Use `--no-verify` or skip hooks unless explicitly requested.
+- Add comments that restate what the code already says.
+
+## Git & PRs
+
+- Only create commits when explicitly asked.
+- Write commit messages in imperative mood (e.g. "Add item list repository").
+- Do not push to remote unless asked.

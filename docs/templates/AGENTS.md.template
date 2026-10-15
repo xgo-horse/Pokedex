@@ -1,0 +1,78 @@
+# AGENTS.md
+
+<!--
+  Project overlay template. Copy to the project root as AGENTS.md and fill in.
+  This file carries only what the rules cannot know: names, paths, commands,
+  and where this project deviates from the template. Do not restate the
+  architecture rules here — they live in .cursor/rules/ and are always or
+  automatically applied. Anything duplicated here is sent to the model twice.
+-->
+
+Instructions for AI coding agents working in this repository.
+
+**Architecture & standards:** see [`.cursor/rules/`](.cursor/rules) — `flutter-mvvm-core.mdc` always applies; the layer rules (`dart-style`, `domain-layer`, `data-layer`, `presentation-layer`, `app-shell`, `testing`) attach to matching files.
+
+This file is the **project overlay** — names, paths, commands, and where this repo deviates from the template.
+
+## Project overview
+
+<!-- One paragraph: what the app is, and how the workspace is arranged. -->
+
+| Path | Purpose |
+|------|---------|
+| `lib/` | App entry point, GoRouter config, GetIt dependency injection |
+| `packages/core/` | Shared utilities: `Either`, `Failure`, `LoadState` |
+| `packages/{{FEATURE}}/` | {{Feature}} — Model (`domain/`, `data/`), View + ViewModel (`presentation/`) |
+
+**Stack:** <!-- Dart/Flutter SDK constraint and the packages that shape the code. -->
+
+App imports: `package:core/...`, `package:{{FEATURE}}/...`.
+
+## Naming map
+
+The rules use a neutral `catalog` / `Item` example. In this repo:
+
+| Template | Here |
+|----------|------|
+| `catalog` package | `{{FEATURE}}` |
+| `Item` entity | `{{Entity}}` (`domain/models/{{entity}}.dart`) |
+| `ItemCategory` | <!-- your filter type; call out any name that differs from the obvious guess --> |
+| `LoadItemList` | `Load{{Entity}}List`, `Get{{Entity}}Detail` |
+| Filter strategies | `All{{Entity}}Filter`, `{{X}}{{Entity}}Filter` |
+| Routes | `/{{feature}}`, `/{{feature}}/:id` |
+
+## Live reference implementation
+
+Read these files rather than a copied snippet — they are the current source of truth for the vertical slice:
+
+- ViewModel: `packages/{{FEATURE}}/lib/presentation/view_models/..._cubit.dart`
+- State: `packages/{{FEATURE}}/lib/presentation/view_models/..._state.dart`
+- Intents / Actions / Commands: `packages/{{FEATURE}}/lib/presentation/{intents,actions,commands}/...`
+- View: `packages/{{FEATURE}}/lib/presentation/views/..._screen.dart`
+- Use case → repository → data source: `.../domain/use_cases/...`, `.../data/repositories/...`
+
+<!--
+  Then list where this project goes BEYOND the template, e.g.:
+  - a screen that needs a feature-specific state instead of LoadState<T>, and why
+  - concurrency guards, paging, or caching the template does not describe
+  These notes are the highest-value part of this file. Keep them short.
+-->
+
+## Build & test commands
+
+Run from the repository root unless noted.
+
+```bash
+dart pub get                 # Resolve workspace dependencies
+dart analyze                 # Static analysis (run after code changes)
+dart format .                # Format changed files
+flutter run                  # Run the app (pick a device when prompted)
+flutter test                 # Run all tests
+
+# Package-scoped tests
+cd packages/{{FEATURE}} && flutter test
+
+# Code generation, localizations, build flavors — add the ones this project uses
+```
+
+Before finishing a task, run `dart analyze` and fix any issues. Run `dart format .` on files you changed.

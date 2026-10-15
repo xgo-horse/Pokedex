@@ -1,0 +1,54 @@
+---
+description: Dart code style — Effective Dart, sealed classes, pattern matching, Either
+globs: **/*.dart
+alwaysApply: false
+---
+
+## Code style
+
+- Follow [Effective Dart](https://dart.dev/effective-dart) and `analysis_options.yaml` (`flutter_lints`).
+- Use `const` constructors where possible.
+- Prefer `final` over `var`. Avoid `dynamic` unless unavoidable.
+- Name files `snake_case.dart`, types `PascalCase`, members `camelCase`.
+- Keep widgets small; extract reusable pieces into their own files.
+- Use `package:` imports for cross-package references; relative imports within the same package.
+- Prefer **sealed classes** for closed hierarchies (states, results, errors, commands).
+- Prefer **pattern matching** (`switch` expressions / statements with patterns) over long `if/else` or manual type checks.
+
+```dart
+// ✅ GOOD — sealed class + exhaustive switch (LoadState lives in package:core)
+Widget buildBody(LoadState<List<Item>> state) => switch (state) {
+      LoadInitial() => const SizedBox.shrink(),
+      LoadLoading() => const CircularProgressIndicator(),
+      LoadSuccess(:final data) => ItemList(items: data),
+      LoadFailure(:final failure) => ErrorView(message: failure.message),
+    };
+
+// ❌ BAD — open hierarchy with runtime type checks
+abstract class LoadState {}
+class LoadSuccess extends LoadState {
+  LoadSuccess(this.data);
+  final List<Item> data;
+}
+```
+
+```dart
+// ✅ GOOD — domain stays Flutter-free, returns Either
+abstract class ItemRepository {
+  Future<Either<Failure, List<Item>>> getItemList();
+}
+
+// ❌ BAD — throwing for expected failures
+abstract class ItemRepository {
+  Future<List<Item>> getItemList();
+}
+```
+
+## Either for results
+
+Use `Either<Failure, T>` from `package:core` for operations that can fail.
+
+- **Left** — typed `Failure` (not raw strings in domain).
+- **Right** — success value.
+- Repositories and use cases return `Future<Either<Failure, T>>`; do not throw for expected errors.
+- Cubits map to `LoadState`, keeping the **`Failure` object** on `LoadFailure` (do not collapse to a bare `String`).
